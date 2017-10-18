@@ -35,7 +35,7 @@ def pol2cart(rho, phi):
     y = rho * np.sin(phi)
     return(x, y)
 
-def mapCircularArrayToColor(a):
+def array_to_rgb(a):
     h = a/(2*np.pi)
     s = np.ones(np.shape(h))
     v = np.ones(np.shape(h))
@@ -44,7 +44,7 @@ def mapCircularArrayToColor(a):
     rgb = hsv_to_rgb(hsv)
     return np.hstack((rgb, l)).astype('float32')
     
-def binarySearch(a, x, lo=0, hi=None):
+def binary_search(a, x, lo=0, hi=None):
     
     idx = np.empty((len(x), 1), dtype='int32')
     for i in range(len(x)):
@@ -94,10 +94,10 @@ class SpatialView(ManualClusteringView):
         self.spike_clusters = spike_clusters
         
         # extra initialization for spatial functionality
-        self.loadTrackingData()
+        self.load_tracking_data()
         
         # load system spike timestamps for aligning with tracking data
-        self.loadSystemSpikeTimes()
+        self.load_system_spike_times()
 
 
     def on_select(self, cluster_ids=None):
@@ -107,11 +107,11 @@ class SpatialView(ManualClusteringView):
         if n_clusters == 0:
             return
         
-        binSizeX = self.bins['x'][1] - self.bins['x'][0];
-        binSizeY = self.bins['y'][1] - self.bins['y'][0];
+        bin_size_x = self.bins['x'][1] - self.bins['x'][0];
+        bin_size_y = self.bins['y'][1] - self.bins['y'][0];
         
-        binCentresX = self.bins['x'][:-1] + binSizeX/2
-        binCentresY = self.bins['y'][:-1] + binSizeY/2
+        bin_centres_x = self.bins['x'][:-1] + bin_size_x/2
+        bin_centres_y = self.bins['y'][:-1] + bin_size_y/2
         
         with self.building():
         
@@ -126,18 +126,18 @@ class SpatialView(ManualClusteringView):
                 # Get the spike times, relative to tracking data
                 # spikeTimes = self.spike_times[idx] + self.t[0]
                 spikeTimes = self.spike_times_aligned[idx]
-                idx = binarySearch(self.t, spikeTimes)
+                idx = binary_search(self.t, spikeTimes)
                 validSpikes = idx > 0
                 idx = idx[validSpikes]
-                self.spikeTrackingIndex = idx
+                self.inds_spike_tracking = idx
                 
-                rateMap = self.rateMap(spikeTimes)
-                hdTuningCurve = self.hdTuningCurve(spikeTimes)
+                rate_map = self.rate_map(spikeTimes)
+                hd_tuning_curve = self.hd_tuning_curve(spikeTimes)
                 
-                self.makePlots(c, hdTuningCurve, rateMap)
+                self.make_plots(c, hd_tuning_curve, rate_map)
                 
 
-    def makePlots(self, clu_idx, hdTuningCurve, rateMap):
+    def make_plots(self, clu_idx, hd_tuning_curve, rate_map):
     
             if clu_idx is not None:
                 color = tuple(_colormap(clu_idx)) + (.5,)
@@ -158,20 +158,20 @@ class SpatialView(ManualClusteringView):
                         )
                     
             self[0, 0].scatter(
-                x=self.x[self.spikeTrackingIndex],
-                y=self.y[self.spikeTrackingIndex],
+                x=self.x[self.inds_spike_tracking],
+                y=self.y[self.inds_spike_tracking],
                 uniform=None,
                 color=color,
                 size=2
                 )
                 
-            spike_colors = mapCircularArrayToColor(self.spikeHd)
+            spike_colors = array_to_rgb(self.spikeHd)
                 
             #pyqtRemoveInputHook(),
             #pdb.set_trace(),
             self[1, 0].scatter(
-                x=self.x[self.spikeTrackingIndex],
-                y=self.y[self.spikeTrackingIndex],
+                x=self.x[self.inds_spike_tracking],
+                y=self.y[self.inds_spike_tracking],
                 uniform=False,
                 color=spike_colors,
                 size=2
@@ -216,9 +216,9 @@ class SpatialView(ManualClusteringView):
                     data_bounds = data_bounds
                 )
             
-            binSizeHd = self.bins['hd'][1] - self.bins['hd'][0]
-            binCentresHd = self.bins['hd'][:-1] + binSizeHd/2
-            (x, y) = pol2cart(hdTuningCurve, binCentresHd)
+            bin_size_hd = self.bins['hd'][1] - self.bins['hd'][0]
+            bin_centres_hd = self.bins['hd'][:-1] + bin_size_hd/2
+            (x, y) = pol2cart(hd_tuning_curve, bin_centres_hd)
 
             # HD tuning curve
             self[0, 1].plot(
@@ -241,47 +241,47 @@ class SpatialView(ManualClusteringView):
                      )
                      
                      
-    def setSpikes(self, cluster_id):
-        """Set the internal currentClusterSpikeTimes attribute for one cluster"""
+    # def set_spikes(self, cluster_id):
+        # """Set the internal currentClusterSpikeTimes attribute for one cluster"""
 
-        # Get indices of all spikes for the current cluster
-        idx = np.in1d(self.spike_clusters, cluster_id)
+        # # Get indices of all spikes for the current cluster
+        # idx = np.in1d(self.spike_clusters, cluster_id)
         
-        # Get the spike times, relative to tracking data
-        spikeTimes = self.spike_times[idx] + self.t[0]
+        # # Get the spike times, relative to tracking data
+        # spikeTimes = self.spike_times[idx] + self.t[0]
         
-        # Find nearest indices of tracking samples for all spikes
-        idx = self.binarySearch(self.t, spikeTimes)
-        # Select 'valid' samples (those within the tracking time range and above the speed threshold)
-        validSpikes = (idx > 0) and (self.speed >= self.speed_threshold)
-        # Commit the valid spike indices to the internal spikeTrackingIndex attribute
-        idx = idx[validSpikes]
-        self.spikeTrackingIndex = idx
+        # # Find nearest indices of tracking samples for all spikes
+        # idx = self.binary_search(self.t, spikeTimes)
+        # # Select 'valid' samples (those within the tracking time range and above the speed threshold)
+        # validSpikes = (idx > 0) and (self.speed >= self.speed_threshold)
+        # # Commit the valid spike indices to the internal inds_spike_tracking attribute
+        # idx = idx[validSpikes]
+        # self.inds_spike_tracking = idx
                      
-    def rateMap(self, spikeTimes):
+    def rate_map(self, spikeTimes):
         # Get spike rate map
         tmp = np.histogram2d(
-                self.x[self.spikeTrackingIndex],
-                self.y[self.spikeTrackingIndex],
+                self.x[self.inds_spike_tracking],
+                self.y[self.inds_spike_tracking],
                 bins=(self.bins['x'],self.bins['y'])
             )
         histSpike = tmp[0]
-        rateMap = histSpike / self.occupancyHist * self.tracking_fs
+        rate_map = histSpike / self.occupancyHist * self.tracking_fs
         
         # Gaussian smooth
-        badBins = np.isinf(rateMap) | np.isnan(rateMap)
-        rateMap[badBins] = 0;
-        rateMap = sim.filters.gaussian_filter(
-                rateMap,
+        badBins = np.isinf(rate_map) | np.isnan(rate_map)
+        rate_map[badBins] = 0;
+        rate_map = sim.filters.gaussian_filter(
+                rate_map,
                 sigma=self.n_smooth_pos,
                 order=0
             )
-        rateMap[badBins] = np.nan;
-        return rateMap
+        rate_map[badBins] = np.nan;
+        return rate_map
         
-    def hdTuningCurve(self, spikeTimes):
+    def hd_tuning_curve(self, spikeTimes):
         # Get the HD for every spike
-        self.spikeHd = self.hd[self.spikeTrackingIndex]
+        self.spikeHd = self.hd[self.inds_spike_tracking]
         
         # Make the histogram
         tmp = np.histogram(a=self.spikeHd, bins=(self.bins['hd']))
@@ -301,7 +301,7 @@ class SpatialView(ManualClusteringView):
         crv /= np.max(crv)
         return crv
      
-    def loadTrackingData(self):
+    def load_tracking_data(self):
         # Load tracker data as a dictionary
         #trk = sio.loadmat(basePath + '\\' + trackerFileName)
         trk = sio.loadmat(self.tracking_filename);
@@ -343,7 +343,7 @@ class SpatialView(ManualClusteringView):
         self.hdOccupancyHist = tmp[0]
         
     # Load the recordings system clock timestamps for spikes
-    def loadSystemSpikeTimes(self):
+    def load_system_spike_times(self):
         data = np.load('spike_times_microsec.npy', mmap_mode=None, allow_pickle=False)
         data = data.astype('float64')
         self.spike_times_aligned = data / 1e6
