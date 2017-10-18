@@ -8,7 +8,8 @@
 
 # Base imports
 import logging
-
+import pdb
+from PyQt4.QtCore import pyqtRemoveInputHook
 import numpy as np
 
 from phy.utils._color import _colormap
@@ -19,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 # RG imports
 from bisect import bisect_left
+import math
+import scipy.io as sio
 import scipy.ndimage as sim
+from matplotlib.colors import hsv_to_rgb
 
 # -----------------------------------------------------------------------------
 # Spatial view
@@ -133,10 +137,10 @@ class SpatialView(ManualClusteringView):
                 
                 #rate_map = self.rate_map(spikeTimes)
                 hd_tuning_curve = self.hd_tuning_curve(spikeTimes)
-                self.make_plots(c, hd_tuning_curve, rate_map)
+                self.make_plots(c, hd_tuning_curve)
                 
 
-    def make_plots(self, clu_idx, hd_tuning_curve, rate_map):
+    def make_plots(self, clu_idx, hd_tuning_curve):
     
             if clu_idx is not None:
                 color = tuple(_colormap(clu_idx)) + (.5,)
@@ -145,35 +149,48 @@ class SpatialView(ManualClusteringView):
                 return
             assert len(color) == 4
             
+            # Find range of X/Y tracking data
+            min_x = np.min(self.x)
+            min_y = np.min(self.y)
+            max_x = np.max(self.x)
+            max_y = np.max(self.y)
+            mid_x = (min_x + max_x) / 2
+            mid_y = (min_y + max_y) / 2
+            rng_x = max_x - min_x
+            rng_y = max_y - min_y
+            max_rng = max(rng_x, rng_y)
+            hw = max_rng / 2
+            data_bounds = (mid_x-hw, mid_y-hw, mid_x+hw, mid_y+hw)
+            
             # Plot path first time only
             if clu_idx == 0:
                 # Both normal and hd-coded
                 for i in [0, 1]:
-                    self[i, 0].plot(
+                    self[i, 0].uplot(
                         x=self.x.reshape((1,-1)),
                         y=self.y.reshape((1, -1)),
-                        uniform=None,           # needs to be 'None' for the uniformity to work
                         color=(1, 1, 1, 0.2),
-                        )
+                        data_bounds=data_bounds
+                    )
                     
+            # Spike locations
             self[0, 0].scatter(
                 x=self.x[self.inds_spike_tracking],
                 y=self.y[self.inds_spike_tracking],
-                uniform=None,
                 color=color,
-                size=2
-                )
+                size=2,
+                data_bounds=data_bounds
+            )
                 
+                
+            # Spike locations (HD-color-coded)
             spike_colors = array_to_rgb(self.spikeHd)
-                
-            #pyqtRemoveInputHook(),
-            #pdb.set_trace(),
             self[1, 0].scatter(
                 x=self.x[self.inds_spike_tracking],
                 y=self.y[self.inds_spike_tracking],
-                uniform=False,
                 color=spike_colors,
-                size=2
+                size=2,
+                data_bounds=data_bounds
                 ) 
             
             
@@ -191,26 +208,23 @@ class SpatialView(ManualClusteringView):
             # Plot axes first time only
             if clu_idx == 0:
                 
-                self[0, 1].plot(
+                self[0, 1].uplot(
                         x=x,
                         y=y,
-                        uniform=None,
                         color=(1, 1, 1, 0.5),
                         data_bounds = data_bounds
                     )
                     
-                self[0, 1].plot(
+                self[0, 1].uplot(
                     x=np.array([min_x, max_x]),
                     y=np.array([0, 0]) + (min_y + max_y)/2,
-                    uniform=None,
                     color=(1, 1, 1, 0.3),
                     data_bounds = data_bounds
                 )
                 
-                self[0, 1].plot(
+                self[0, 1].uplot(
                     y=np.array([min_y, max_y]),
                     x=np.array([0, 0]) + (min_x + max_x)/2,
-                    uniform=None,
                     color=(1, 1, 1, 0.3),
                     data_bounds = data_bounds
                 )
@@ -223,7 +237,6 @@ class SpatialView(ManualClusteringView):
             self[0, 1].plot(
                     x=x,
                     y=y,
-                    uniform=None,
                     color=color,
                     data_bounds = data_bounds
                 )
