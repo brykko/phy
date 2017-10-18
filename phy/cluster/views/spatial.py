@@ -131,9 +131,8 @@ class SpatialView(ManualClusteringView):
                 idx = idx[validSpikes]
                 self.inds_spike_tracking = idx
                 
-                rate_map = self.rate_map(spikeTimes)
+                #rate_map = self.rate_map(spikeTimes)
                 hd_tuning_curve = self.hd_tuning_curve(spikeTimes)
-                
                 self.make_plots(c, hd_tuning_curve, rate_map)
                 
 
@@ -258,26 +257,26 @@ class SpatialView(ManualClusteringView):
         # idx = idx[validSpikes]
         # self.inds_spike_tracking = idx
                      
-    def rate_map(self, spikeTimes):
-        # Get spike rate map
-        tmp = np.histogram2d(
-                self.x[self.inds_spike_tracking],
-                self.y[self.inds_spike_tracking],
-                bins=(self.bins['x'],self.bins['y'])
-            )
-        histSpike = tmp[0]
-        rate_map = histSpike / self.occupancyHist * self.tracking_fs
+    # def rate_map(self, spikeTimes):
+        # # Get spike rate map
+        # tmp = np.histogram2d(
+                # self.x[self.inds_spike_tracking],
+                # self.y[self.inds_spike_tracking],
+                # bins=(self.bins['x'],self.bins['y'])
+            # )
+        # histSpike = tmp[0]
+        # rate_map = histSpike / self.occupancyHist * self.tracking_fs
         
-        # Gaussian smooth
-        badBins = np.isinf(rate_map) | np.isnan(rate_map)
-        rate_map[badBins] = 0;
-        rate_map = sim.filters.gaussian_filter(
-                rate_map,
-                sigma=self.n_smooth_pos,
-                order=0
-            )
-        rate_map[badBins] = np.nan;
-        return rate_map
+        # # Gaussian smooth
+        # badBins = np.isinf(rate_map) | np.isnan(rate_map)
+        # rate_map[badBins] = 0;
+        # rate_map = sim.filters.gaussian_filter(
+                # rate_map,
+                # sigma=self.n_smooth_pos,
+                # order=0
+            # )
+        # rate_map[badBins] = np.nan;
+        # return rate_map
         
     def hd_tuning_curve(self, spikeTimes):
         # Get the HD for every spike
