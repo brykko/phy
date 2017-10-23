@@ -13,6 +13,7 @@ from PyQt4.QtCore import pyqtRemoveInputHook
 import numpy as np
 
 from phy.utils._color import _colormap
+from phy.utils import Bunch
 from .base import ManualClusteringView
 from phy.plot import NDC
 
