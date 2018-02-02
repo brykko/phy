@@ -44,7 +44,7 @@ def pol2cart(rho, phi):
 
 
 def array_to_rgb(a):
-    h = a/(2*np.pi)
+    h = a[:, None]/(2*np.pi)
     s = np.ones(np.shape(h))
     v = np.ones(np.shape(h))
     l = np.ones(np.shape(h))
