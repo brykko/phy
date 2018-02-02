@@ -275,7 +275,7 @@ class SpatialView(ManualClusteringView):
         
         # Make the bin vectors for x and y
         self.bins = dict()
-        vars = {'x': x, y: 'y'}
+        vars = {'x': x, 'y': y}
         for key, val in vars.items():
             min = np.percentile(val, 0.1)
             max = np.percentile(val, 99.9)
