@@ -81,7 +81,7 @@ class SpatialView(ManualClusteringView):
     }
 
     def __init__(self,
-                 spike_times=None,
+                 spike_samples=None,
                  spike_clusters=None,
                  sample_rate=None,
                  tracking_data=None,
@@ -98,8 +98,8 @@ class SpatialView(ManualClusteringView):
         # Spike clusters.
         self.spike_clusters = spike_clusters
         self.sample_rate = float(sample_rate)
-        self.spike_times = np.asarray(spike_times)
-        self.n_spikes, = self.spike_times.shape
+        self.spike_samples = np.asarray(spike_samples)
+        self.n_spikes, = self.spike_samples.shape
         self.tracking_data = tracking_data
         assert spike_clusters.shape == (self.n_spikes,)
 
@@ -128,8 +128,8 @@ class SpatialView(ManualClusteringView):
             idx = np.in1d(self.spike_clusters, cluster_id)
 
             # Get the spike times, relative to tracking data
-            spike_times = self.spike_times[idx]
-            idx = binary_search(self.tracking_data[:, 0], spike_times)
+            spike_samples = self.spike_samples[idx]
+            idx = binary_search(self.tracking_data[:, 0], spike_samples)
             valid_spikes = idx > 0
             inds_spike_tracking = idx[valid_spikes]
             hd_tuning_curve, spike_hd = self.hd_tuning_curve(inds_spike_tracking)
