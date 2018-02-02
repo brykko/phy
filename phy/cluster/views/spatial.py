@@ -108,16 +108,15 @@ class SpatialView(ManualClusteringView):
 
     def on_select(self, cluster_ids=None):
         super(SpatialView, self).on_select(cluster_ids)
-        cluster_ids = self.cluster_ids
         n_clusters = len(cluster_ids)
         if n_clusters == 0:
             return
         
         with self.building():
-            for c in range(len(cluster_ids)):
-                self.make_plots(c)
+            for c, id in enumerate(cluster_ids):
+                self.make_plots(c, id)
 
-    def make_plots(self, clu_idx):
+    def make_plots(self, clu_idx, cluster_id):
     
             if clu_idx is not None:
                 color = tuple(_colormap(clu_idx)) + (.5,)
@@ -125,7 +124,6 @@ class SpatialView(ManualClusteringView):
                 return
             assert len(color) == 4
 
-            cluster_id = cluster_ids[clu_idx]
             # Get indices of all spikes for the current cluster
             idx = np.in1d(self.spike_clusters, cluster_id)
 
@@ -295,4 +293,4 @@ class SpatialView(ManualClusteringView):
         # Calculate the HD occupancy histogram
         tmp = np.histogram(hd, bins=(self.bins['hd']))
         self.hdOccupancyHist = tmp[0]
-        
+
