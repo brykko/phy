@@ -242,7 +242,7 @@ class SpatialView(ManualClusteringView):
         spike_hd = hd[spike_tracking_inds]
 
         # Make the histogram
-        tmp = np.histogram(a=spike_hdk, bins=(self.bins['hd']))
+        tmp = np.histogram(a=spike_hd, bins=(self.bins['hd']))
         hist_spike = tmp[0]
 
         # Normalize by the occupancy hist to get tuning curve
