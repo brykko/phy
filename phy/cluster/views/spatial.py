@@ -265,6 +265,7 @@ class SpatialView(ManualClusteringView):
         t = pos[:, 0]
         x = pos[:, 1]
         y = pos[:, 2]
+        hd = pos[:, 3]
         
         # Calculate speed
         dx = np.diff(x)
@@ -292,6 +293,6 @@ class SpatialView(ManualClusteringView):
         self.occupancyHist = tmp[0]
         
         # Calculate the HD occupancy histogram
-        tmp = np.histogram(self.hd, bins=(self.bins['hd']))
+        tmp = np.histogram(hd, bins=(self.bins['hd']))
         self.hdOccupancyHist = tmp[0]
         
