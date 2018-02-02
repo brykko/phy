@@ -130,7 +130,7 @@ class SpatialView(ManualClusteringView):
             idx = np.in1d(self.spike_clusters, cluster_id)
 
             # Get the spike times, relative to tracking data
-            spike_times = self.spike_times[idx] + self.t[0]
+            spike_times = self.spike_times[idx]
             idx = binary_search(self.tracking_data[:, 0], spike_times)
             valid_spikes = idx > 0
             inds_spike_tracking = idx[valid_spikes]
@@ -288,7 +288,7 @@ class SpatialView(ManualClusteringView):
            
         # Calculate the spatial occupancy histogram
         idx = valid_speed
-        tmp = np.histogram2d(self.x[idx], self.y[idx], bins=(self.bins['x'],self.bins['y']) )
+        tmp = np.histogram2d(x[idx], y[idx], bins=(self.bins['x'],self.bins['y']) )
         self.occupancyHist = tmp[0]
         
         # Calculate the HD occupancy histogram
