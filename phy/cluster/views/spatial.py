@@ -269,9 +269,9 @@ class SpatialView(ManualClusteringView):
         # Calculate speed
         dx = np.diff(x)
         dy = np.diff(y)
-        dt = dp.diff(t)
-        self.speed = np.hstack((0, np.hypot(dy, dx) / dt))
-        self.validSpeed = self.speed > self.speed_threshold
+        dt = np.diff(t)
+        speed = np.hstack((0, np.hypot(dy, dx) / dt))
+        valid_speed = speed > self.speed_threshold
         
         # Make the bin vectors for x and y
         self.bins = dict()
@@ -287,7 +287,7 @@ class SpatialView(ManualClusteringView):
         self.bins['hd'] = np.linspace(0, 2*math.pi, self.n_hd_bins)
            
         # Calculate the spatial occupancy histogram
-        idx = self.validSpeed
+        idx = valid_speed
         tmp = np.histogram2d(self.x[idx], self.y[idx], bins=(self.bins['x'],self.bins['y']) )
         self.occupancyHist = tmp[0]
         
