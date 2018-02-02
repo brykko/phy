@@ -172,7 +172,7 @@ class SpatialView(ManualClusteringView):
             )
 
             # Spike locations (HD-color-coded)
-            spike_colors = array_to_rgb(spike_hdk)
+            spike_colors = array_to_rgb(spike_hd)
             self[1, 0].scatter(
                 x=x[inds_spike_tracking],
                 y=y[inds_spike_tracking],
