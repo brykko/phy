@@ -132,7 +132,7 @@ class SpatialView(ManualClusteringView):
             idx = binary_search(self.tracking_data[:, 0], spike_times)
             valid_spikes = idx > 0
             inds_spike_tracking = idx[valid_spikes]
-            hd_tuning_curve = self.hd_tuning_curve(inds_spike_tracking)
+            hd_tuning_curve, spike_hd = self.hd_tuning_curve(inds_spike_tracking)
 
             pos = self.tracking_data
             x = pos[:, 1]
@@ -172,7 +172,7 @@ class SpatialView(ManualClusteringView):
             )
 
             # Spike locations (HD-color-coded)
-            spike_colors = array_to_rgb(self.spikeHd)
+            spike_colors = array_to_rgb(spike_hdk)
             self[1, 0].scatter(
                 x=x[inds_spike_tracking],
                 y=y[inds_spike_tracking],
@@ -257,7 +257,7 @@ class SpatialView(ManualClusteringView):
                 mode='wrap'
             )
         crv /= np.max(crv)
-        return crv
+        return crv, spike_hd
      
     def calculate_occupancy_histograms(self):
         pos = self.tracking_data
