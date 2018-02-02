@@ -238,16 +238,17 @@ class SpatialView(ManualClusteringView):
     def hd_tuning_curve(self, spike_tracking_inds):
 
         # Get the HD for every spike
-        spike_hd = self.hd[spike_tracking_inds]
+        hd = self.tracking_data[:, 3]
+        spike_hd = hd[spike_tracking_inds]
 
         # Make the histogram
         tmp = np.histogram(a=spike_hdk, bins=(self.bins['hd']))
-        histSpike = tmp[0]
+        hist_spike = tmp[0]
 
         # Normalize by the occupancy hist to get tuning curve
-        crv = histSpike / self.hdOccupancyHist
-        badBins = np.isinf(crv) | np.isnan(crv)
-        crv[badBins] = 0
+        crv = hist_spike / self.hd_occupancy_hist
+        bad_bins = np.isinf(crv) | np.isnan(crv)
+        crv[bad_bins] = 0
 
         # Gaussian smooth the tuning curve
         crv = sim.filters.gaussian_filter(
@@ -288,9 +289,9 @@ class SpatialView(ManualClusteringView):
         # Calculate the spatial occupancy histogram
         idx = valid_speed
         tmp = np.histogram2d(x[idx], y[idx], bins=(self.bins['x'],self.bins['y']) )
-        self.occupancyHist = tmp[0]
+        self.occupancy_hist = tmp[0]
         
         # Calculate the HD occupancy histogram
         tmp = np.histogram(hd, bins=(self.bins['hd']))
-        self.hdOccupancyHist = tmp[0]
+        self.hd_occupancy_hist = tmp[0]
 
