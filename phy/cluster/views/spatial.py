@@ -96,12 +96,12 @@ class SpatialView(ManualClusteringView):
             **kwargs)
 
         # Spike clusters.
-        assert spike_clusters.shape == (self.n_spikes,)
         self.spike_clusters = spike_clusters
         self.sample_rate = float(sample_rate)
         self.spike_times = np.asarray(spike_times)
         self.n_spikes, = self.spike_times.shape
         self.tracking_data = tracking_data
+        assert spike_clusters.shape == (self.n_spikes,)
 
         # extra initialization for spatial functionality
         self.calculate_occupancy_histograms()
