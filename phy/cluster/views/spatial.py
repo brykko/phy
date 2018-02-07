@@ -106,16 +106,19 @@ class SpatialView(ManualClusteringView):
             else:
                 sample_range = [val*sample_rate for val in timerange]
 
-            valid_spikes = (spike_samples > sample_range[0]) & (spike_samples < sample_range[1])
+            # Store a boolean vector indicating which spikes are within the
+            # required time range
+            self.timerange = timerange
+            self.valid_spikes = (spike_samples > sample_range[0]) & (spike_samples < sample_range[1])
+            self.spike_clusters = spike_clusters
+            self.sample_rate = float(sample_rate)
+            self.spike_samples = spike_samples
+            self.n_spikes, = self.spike_samples.shape
+
+            # Only store tracking data samples from within the time range
             inds = tracking_data[:, 0]
             valid_tracking = (inds > sample_range[0]) & (inds < sample_range[1])
-
-            self.spike_clusters = spike_clusters[valid_spikes]
-            self.sample_rate = float(sample_rate)
-            self.spike_samples = spike_samples[valid_spikes]
-            self.n_spikes, = self.spike_samples.shape
             self.tracking_data = tracking_data[valid_tracking, :]
-            self.timerange = timerange
 
             # extra initialization for spatial functionality
             self.calculate_occupancy_histograms()
@@ -137,8 +140,9 @@ class SpatialView(ManualClusteringView):
             assert len(color) == 4
 
             # Get indices of all spikes for the current cluster
+            v = self.valid_spikes
             spike_inds_clu = np.in1d(self.spike_clusters, cluster_id)
-            spike_samples = self.spike_samples[spike_inds_clu]
+            spike_samples = self.spike_samples[spike_inds_clu[v]]
 
             inds_spike_tracking = binary_search(self.tracking_data[:, 0], spike_samples)
             valid_spikes = inds_spike_tracking > 0
