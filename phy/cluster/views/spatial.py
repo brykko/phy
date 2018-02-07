@@ -108,7 +108,7 @@ class SpatialView(ManualClusteringView):
 
             valid_spikes = (spike_samples >= sample_range[0]) & (spike_samples <= sample_range[1])
             inds = tracking_data[:, 0]
-            valid_tracking = inds > sample_range[0] & inds < sample_range[1]
+            valid_tracking = (inds >= sample_range[0]) & (inds <= sample_range[1])
 
             self.spike_clusters = spike_clusters[valid_spikes]
             self.sample_rate = float(sample_rate)
