@@ -85,6 +85,7 @@ class SpatialView(ManualClusteringView):
                  spike_clusters=None,
                  sample_rate=None,
                  tracking_data=None,
+                 timerange=None,
                  **kwargs):
 
         assert sample_rate > 0
@@ -95,26 +96,33 @@ class SpatialView(ManualClusteringView):
             shape=(2, 2),
             **kwargs)
 
-        # Spike clusters.
-        self.spike_clusters = spike_clusters
-        self.sample_rate = float(sample_rate)
-        self.spike_samples = np.asarray(spike_samples)
-        self.n_spikes, = self.spike_samples.shape
-        self.tracking_data = tracking_data
-        assert spike_clusters.shape == (self.n_spikes,)
+        # Apply the timerange restriction to the data if necessary
+        self._do_plot = True if tracking_data is not None else False
 
-        # extra initialization for spatial functionality
-        self.calculate_occupancy_histograms()
+        if tracking_data is not None:
+            sample_range = [val*sample_rate for val in timerange]
+            v_spikes = spike_samples > sample_range[0] & spike_samples < sample_range[1]
+            inds = tracking_data[:, 0]
+            v_tracking = inds > sample_range[0] & inds < sample_range[1]
+
+            self.spike_clusters = spike_clusters[v_spikes]
+            self.sample_rate = float(sample_rate)
+            self.spike_samples = np.asarray(spike_samples)[v_spikes]
+            self.n_spikes, = self.spike_samples.shape
+            self.tracking_data = tracking_data[v_tracking, :]
+            self.timerange = timerange
+            assert spike_clusters.shape == (self.n_spikes,)
+
+            # extra initialization for spatial functionality
+            self.calculate_occupancy_histograms()
 
     def on_select(self, cluster_ids=None):
         super(SpatialView, self).on_select(cluster_ids)
         n_clusters = len(cluster_ids)
-        if n_clusters == 0:
-            return
-        
-        with self.building():
-            for c, id in enumerate(cluster_ids):
-                self.make_plots(c, id)
+        if n_clusters > 0 and self._do_plot:
+            with self.building():
+                for c, id in enumerate(cluster_ids):
+                    self.make_plots(c, id)
 
     def make_plots(self, clu_idx, cluster_id):
     
