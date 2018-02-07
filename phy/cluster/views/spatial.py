@@ -100,16 +100,20 @@ class SpatialView(ManualClusteringView):
         self._do_plot = True if tracking_data is not None else False
 
         if tracking_data is not None:
-            sample_range = [val*sample_rate for val in timerange]
-            v_spikes = spike_samples > sample_range[0] & spike_samples < sample_range[1]
-            inds = tracking_data[:, 0]
-            v_tracking = inds > sample_range[0] & inds < sample_range[1]
+            if timerange is None:
+                sample_range = (spike_samples[0], spike_samples[-1])
+            else:
+                sample_range = [val*sample_rate for val in timerange]
 
-            self.spike_clusters = spike_clusters[v_spikes]
+            valid_spikes = spike_samples >= sample_range[0] & spike_samples <= sample_range[1]
+            inds = tracking_data[:, 0]
+            valid_tracking = inds > sample_range[0] & inds < sample_range[1]
+
+            self.spike_clusters = spike_clusters[valid_spikes]
             self.sample_rate = float(sample_rate)
-            self.spike_samples = np.asarray(spike_samples)[v_spikes]
+            self.spike_samples = np.asarray(spike_samples)[valid_spikes]
             self.n_spikes, = self.spike_samples.shape
-            self.tracking_data = tracking_data[v_tracking, :]
+            self.tracking_data = tracking_data[valid_tracking, :]
             self.timerange = timerange
             assert spike_clusters.shape == (self.n_spikes,)
 
