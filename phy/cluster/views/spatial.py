@@ -116,7 +116,6 @@ class SpatialView(ManualClusteringView):
             self.n_spikes, = self.spike_samples.shape
             self.tracking_data = tracking_data[valid_tracking, :]
             self.timerange = timerange
-            assert spike_clusters.shape == (self.n_spikes,)
 
             # extra initialization for spatial functionality
             self.calculate_occupancy_histograms()
