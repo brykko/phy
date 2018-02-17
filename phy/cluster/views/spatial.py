@@ -140,9 +140,9 @@ class SpatialView(ManualClusteringView):
             assert len(color) == 4
 
             # Get indices of all spikes for the current cluster
-            v = self.valid_spikes
-            spike_inds_clu = np.in1d(self.spike_clusters, cluster_id)
-            spike_samples = self.spike_samples[spike_inds_clu[v]]
+            spikes_valid = self.valid_spikes
+            spikes_in_clu = np.in1d(self.spike_clusters, cluster_id)
+            spike_samples = self.spike_samples[spikes_valid & spikes_in_clu]
 
             inds_spike_tracking = binary_search(self.tracking_data[:, 0], spike_samples)
             valid_spikes = inds_spike_tracking > 0
