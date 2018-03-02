@@ -7,8 +7,6 @@ See also [**my modified version of phy-contrib**](https://github.com/brykko/phy-
 
 ## Installation
 
-**Note**: the installation instructions will be simplified soon.
-
 1. Make sure that you have [**miniconda**](http://conda.pydata.org/miniconda.html) installed. You can choose the Python 3.6 64-bit version for your operating system (Linux, Windows, or OS X).
 2. **Download the [environment file](https://raw.githubusercontent.com/kwikteam/phy/master/installer/environment.yml).**
 3. **Open a terminal** (on Windows, `cmd`, not Powershell) in the directory where you saved the file and type:
