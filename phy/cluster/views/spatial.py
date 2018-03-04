@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Spatial view."""
+"""SpatialView"""
 
 # -----------------------------------------------------------------------------
 # Imports
@@ -17,8 +17,6 @@ from phy.utils import Bunch
 from .base import ManualClusteringView
 from phy.plot import NDC
 
-logger = logging.getLogger(__name__)
-
 # RG imports
 from bisect import bisect_left
 import math
@@ -26,44 +24,9 @@ import scipy.io as sio
 import scipy.ndimage as sim
 from matplotlib.colors import hsv_to_rgb
 
-# -----------------------------------------------------------------------------
-# Spatial view
-# -----------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
 
 
-def cart2pol(x, y):
-    rho = np.sqrt(x**2 + y**2)
-    phi = np.arctan2(y, x)
-    return(rho, phi)
-
-    
-def pol2cart(rho, phi):
-    x = rho * np.cos(phi)
-    y = rho * np.sin(phi)
-    return(x, y)
-
-
-def array_to_rgb(a):
-    h = a[:, None]/(2*np.pi)
-    s = np.ones(np.shape(h))
-    v = np.ones(np.shape(h))
-    l = np.ones(np.shape(h))
-    hsv = np.hstack((h, s, v))
-    rgb = hsv_to_rgb(hsv)
-    return np.hstack((rgb, l)).astype('float32')
-
-    
-def binary_search(a, x, lo=0, hi=None):
-    
-    idx = np.empty((len(x), 1), dtype='int32')
-    for i in range(len(x)):
-        hi = hi if hi is not None else len(a) # hi defaults to len(a)   
-        tmp = bisect_left(a, x[i], lo, hi)          # find insertion position
-        idxTmp = (tmp if tmp != hi else -1) # don't walk off the end
-        idx[i] = idxTmp
-    return idx
-
-    
 class SpatialView(ManualClusteringView):
 
     # Some class variables
@@ -121,7 +84,7 @@ class SpatialView(ManualClusteringView):
             self.tracking_data = tracking_data[valid_tracking, :]
 
             # extra initialization for spatial functionality
-            self.calculate_occupancy_histograms()
+            self._calc_occupancy()
 
     def on_select(self, cluster_ids=None):
         super(SpatialView, self).on_select(cluster_ids)
@@ -129,116 +92,121 @@ class SpatialView(ManualClusteringView):
         if n_clusters > 0 and self._do_plot:
             with self.building():
                 for c, id in enumerate(cluster_ids):
-                    self.make_plots(c, id)
+                    self._make_plots(c, id)
 
-    def make_plots(self, clu_idx, cluster_id):
-    
-            if clu_idx is not None:
-                color = tuple(_colormap(clu_idx)) + (.5,)
-            else:
-                return
-            assert len(color) == 4
+    def _make_plots(self, clu_selection_idx, cluster_id):
+        """
+        Generate all plots for one cluster
+        :param clu_selection_idx: index of cluster in the current selection
+        :param cluster_id: ID of cluster
+        :return:
+        """
+        if clu_selection_idx is not None:
+            color = tuple(_colormap(clu_selection_idx)) + (.5,)
+        else:
+            return
+        assert len(color) == 4
 
-            # Get indices of all spikes for the current cluster
-            v = self.valid_spikes
-            spike_inds_clu = np.in1d(self.spike_clusters, cluster_id)
-            spike_samples = self.spike_samples[spike_inds_clu[v]]
+        # Get indices of all spikes for the current cluster
+        v = self.valid_spikes
+        spike_inds_clu = np.in1d(self.spike_clusters, cluster_id)
+        spike_samples = self.spike_samples[spike_inds_clu[v]]
 
-            inds_spike_tracking = binary_search(self.tracking_data[:, 0], spike_samples)
-            valid_spikes = inds_spike_tracking > 0
-            inds_spike_tracking = inds_spike_tracking[valid_spikes]
-            hd_tuning_curve, spike_hd = self.hd_tuning_curve(inds_spike_tracking)
+        inds_spike_tracking = _binary_search(self.tracking_data[:, 0], spike_samples)
+        valid_spikes = inds_spike_tracking > 0
+        inds_spike_tracking = inds_spike_tracking[valid_spikes]
+        hd_tuning_curve, spike_hd = self._hd_tuning_curve(inds_spike_tracking)
 
-            pos = self.tracking_data
-            x = pos[:, 1]
-            y = pos[:, 2]
-            
-            # Find range of X/Y tracking data
-            min_x = np.min(x)
-            min_y = np.min(y)
-            max_x = np.max(x)
-            max_y = np.max(y)
-            mid_x = (min_x + max_x) / 2
-            mid_y = (min_y + max_y) / 2
-            rng_x = max_x - min_x
-            rng_y = max_y - min_y
-            max_rng = max(rng_x, rng_y)
-            hw = max_rng / 2
-            data_bounds = (mid_x-hw, mid_y-hw, mid_x+hw, mid_y+hw)
-            
-            # Plot path first time only
-            if clu_idx == 0:
-                # Both normal and hd-coded
-                for i in [0, 1]:
-                    self[i, 0].uplot(
-                        x=x.reshape((1,-1)),
-                        y=y.reshape((1, -1)),
-                        color=(1, 1, 1, 0.2),
-                        data_bounds=data_bounds
-                    )
-                    
-            # Spike locations
-            self[0, 0].scatter(
-                x=x[inds_spike_tracking],
-                y=y[inds_spike_tracking],
-                color=color,
-                size=2,
-                data_bounds=data_bounds
+        pos = self.tracking_data
+        x = pos[:, 1]
+        y = pos[:, 2]
+
+        # Find range of X/Y tracking data
+        min_x = np.min(x)
+        min_y = np.min(y)
+        max_x = np.max(x)
+        max_y = np.max(y)
+        mid_x = (min_x + max_x) / 2
+        mid_y = (min_y + max_y) / 2
+        rng_x = max_x - min_x
+        rng_y = max_y - min_y
+        max_rng = max(rng_x, rng_y)
+        hw = max_rng / 2
+        data_bounds = (mid_x-hw, mid_y-hw, mid_x+hw, mid_y+hw)
+
+        # Plot path first time only
+        if clu_selection_idx == 0:
+            # Both normal and hd-coded
+            for i in [0, 1]:
+                self[i, 0].uplot(
+                    x=x.reshape((1,-1)),
+                    y=y.reshape((1, -1)),
+                    color=(1, 1, 1, 0.2),
+                    data_bounds=data_bounds
+                )
+
+        # Spike locations
+        self[0, 0].scatter(
+            x=x[inds_spike_tracking],
+            y=y[inds_spike_tracking],
+            color=color,
+            size=2,
+            data_bounds=data_bounds
+        )
+
+        # Spike locations (HD-color-coded)
+        spike_colors = _vector_to_rgb(spike_hd)
+        self[1, 0].scatter(
+            x=x[inds_spike_tracking],
+            y=y[inds_spike_tracking],
+            color=spike_colors,
+            size=2,
+            data_bounds=data_bounds
             )
 
-            # Spike locations (HD-color-coded)
-            spike_colors = array_to_rgb(spike_hd)
-            self[1, 0].scatter(
-                x=x[inds_spike_tracking],
-                y=y[inds_spike_tracking],
-                color=spike_colors,
-                size=2,
-                data_bounds=data_bounds
-                ) 
+        # HD plot
+        rho = 1.1
+        (pol_x, pol_y) = _pol2cart(rho, np.linspace(0, 2 * math.pi, 1000))
+        min_x = np.min(pol_x)
+        min_y = np.min(pol_y)
+        max_x = np.max(pol_x)
+        max_y = np.max(pol_y)
+        data_bounds = (min_x, min_y, max_x, max_y)
 
-            # HD plot
-            rho = 1.1
-            (pol_x, pol_y) = pol2cart(rho, np.linspace(0, 2*math.pi, 1000))
-            min_x = np.min(pol_x)
-            min_y = np.min(pol_y)
-            max_x = np.max(pol_x)
-            max_y = np.max(pol_y)
-            data_bounds = (min_x, min_y, max_x, max_y)
-
-            # Plot axes first time only
-            if clu_idx == 0:
-                self[0, 1].uplot(
-                        x=pol_x,
-                        y=pol_y,
-                        color=(1, 1, 1, 0.5),
-                        data_bounds = data_bounds
-                    )
-                    
-                self[0, 1].uplot(
-                    x=np.array([min_x, max_x]),
-                    y=np.array([0, 0]) + (min_y + max_y)/2,
-                    color=(1, 1, 1, 0.3),
+        # Plot axes first time only
+        if clu_selection_idx == 0:
+            self[0, 1].uplot(
+                    x=pol_x,
+                    y=pol_y,
+                    color=(1, 1, 1, 0.5),
                     data_bounds = data_bounds
                 )
-                
-                self[0, 1].uplot(
-                    y=np.array([min_y, max_y]),
-                    x=np.array([0, 0]) + (min_x + max_x)/2,
-                    color=(1, 1, 1, 0.3),
-                    data_bounds = data_bounds
-                )
-            
-            bin_size_hd = self.bins['hd'][1] - self.bins['hd'][0]
-            bin_centres_hd = self.bins['hd'][:-1] + bin_size_hd/2
-            (x, y) = pol2cart(hd_tuning_curve, bin_centres_hd)
 
-            # HD tuning curve
-            self[0, 1].plot(
-                    x=x,
-                    y=y,
-                    color=color,
-                    data_bounds = data_bounds
-                )
+            self[0, 1].uplot(
+                x=np.array([min_x, max_x]),
+                y=np.array([0, 0]) + (min_y + max_y)/2,
+                color=(1, 1, 1, 0.3),
+                data_bounds = data_bounds
+            )
+
+            self[0, 1].uplot(
+                y=np.array([min_y, max_y]),
+                x=np.array([0, 0]) + (min_x + max_x)/2,
+                color=(1, 1, 1, 0.3),
+                data_bounds = data_bounds
+            )
+
+        bin_size_hd = self.bins['hd'][1] - self.bins['hd'][0]
+        bin_centres_hd = self.bins['hd'][:-1] + bin_size_hd/2
+        (x, y) = _pol2cart(hd_tuning_curve, bin_centres_hd)
+
+        # HD tuning curve
+        self[0, 1].plot(
+                x=x,
+                y=y,
+                color=color,
+                data_bounds = data_bounds
+            )
                 
     def attach(self, gui):
         """Attach the view to the GUI."""
@@ -250,7 +218,7 @@ class SpatialView(ManualClusteringView):
                      n_hd_bins=self.n_hd_bins,
                      )
         
-    def hd_tuning_curve(self, spike_tracking_inds):
+    def _hd_tuning_curve(self, spike_tracking_inds):
 
         # Get the HD for every spike
         hd = self.tracking_data[:, 3]
@@ -261,20 +229,20 @@ class SpatialView(ManualClusteringView):
         hist_spike = tmp[0]
 
         # Normalize by the occupancy hist to get tuning curve
-        crv = hist_spike / self.hd_occupancy_hist
-        bad_bins = np.isinf(crv) | np.isnan(crv)
-        crv[bad_bins] = 0
+        tcurve = hist_spike / self.hd_occupancy_hist
+        bad_bins = np.isinf(tcurve) | np.isnan(tcurve)
+        tcurve[bad_bins] = 0
 
         # Gaussian smooth the tuning curve
-        crv = sim.filters.gaussian_filter(
-                crv,
+        tcurve = sim.filters.gaussian_filter(
+                tcurve,
                 sigma=self.n_smooth_hd,
                 mode='wrap'
             )
-        crv /= np.max(crv)
-        return crv, spike_hd
+        tcurve /= np.max(tcurve)
+        return tcurve, spike_hd
      
-    def calculate_occupancy_histograms(self):
+    def _calc_occupancy(self):
         pos = self.tracking_data
         t = pos[:, 0]
         x = pos[:, 1]
@@ -309,4 +277,40 @@ class SpatialView(ManualClusteringView):
         # Calculate the HD occupancy histogram
         tmp = np.histogram(hd, bins=(self.bins['hd']))
         self.hd_occupancy_hist = tmp[0]
+
+
+# -----------------------------------------------------------------------------
+# Internal functions
+# -----------------------------------------------------------------------------
+def _cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return rho, phi
+
+
+def _pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return x, y
+
+
+def _vector_to_rgb(a):
+    h = a[:, None]/(2*np.pi)
+    s = np.ones(np.shape(h))
+    v = np.ones(np.shape(h))
+    l = np.ones(np.shape(h))
+    hsv = np.hstack((h, s, v))
+    rgb = hsv_to_rgb(hsv)
+    return np.hstack((rgb, l)).astype('float32')
+
+
+def _binary_search(a, x, lo=0, hi=None):
+
+    idx = np.empty((len(x), 1), dtype='int32')
+    for i in range(len(x)):
+        hi = hi if hi is not None else len(a)   # hi defaults to len(a)
+        tmp = bisect_left(a, x[i], lo, hi)      # find insertion position
+        idx_tmp = (tmp if tmp != hi else -1)     # don't walk off the end
+        idx[i] = idx_tmp
+    return idx
 
