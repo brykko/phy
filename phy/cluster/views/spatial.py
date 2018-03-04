@@ -208,8 +208,8 @@ class SpatialView(ManualClusteringView):
 
         # Spike locations
         self[0, 0].scatter(
-            x=x[inds_spike_tracking],
-            y=y[inds_spike_tracking],
+            x=pos[inds_spike_tracking, 1],
+            y=pos[inds_spike_tracking, 2],
             color=color,
             size=2,
             data_bounds=data_bounds
@@ -218,8 +218,8 @@ class SpatialView(ManualClusteringView):
         # Spike locations (HD-color-coded)
         spike_colors = _vector_to_rgb(spike_hd)
         self[1, 0].scatter(
-            x=x[inds_spike_tracking],
-            y=y[inds_spike_tracking],
+            x=pos[inds_spike_tracking, 1],
+            y=pos[inds_spike_tracking, 2],
             color=spike_colors,
             size=2,
             data_bounds=data_bounds
