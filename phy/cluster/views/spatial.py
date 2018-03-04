@@ -349,7 +349,7 @@ class SpatialView(ManualClusteringView):
     def _update_status(self):
         s = ""
         for i, t in enumerate(self.time_ranges):
-            s += "{}â€“{}".format(t[0], t[1])
+            s += "{}–{}".format(t[0], t[1])
             if i < len(self.time_ranges)-1:
                 s += ", "
         str_timerange = s
