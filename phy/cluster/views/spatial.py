@@ -22,6 +22,7 @@ from bisect import bisect_left
 import math
 import scipy.io as sio
 import scipy.ndimage as sim
+from scipy.ndimage.filters import gaussian_filter1d
 from matplotlib.colors import hsv_to_rgb
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,12 @@ class SpatialView(ManualClusteringView):
     # Some class variables
     n_rate_map_bins = 50
     n_hd_bins = 180
-    n_smooth_pos = 2
-    n_smooth_hd = 2
-    n_px_per_meter = 300
+    n_hd_bins_smooth = 3
+    sec_smooth_pos = 0
+    sec_smooth_hd = 0.2
+    sec_smooth_speed = 0.5
     speed_threshold = 0.025
-    tracking_filename = 'tracker_openField.mat'
+    speed_threshold_mode = "above"
 
     default_shortcuts = {
         'go_left': 'alt+left',
@@ -48,7 +50,7 @@ class SpatialView(ManualClusteringView):
                  spike_clusters=None,
                  sample_rate=None,
                  tracking_data=None,
-                 timerange=None,
+                 time_ranges=None,
                  **kwargs):
 
         assert sample_rate > 0
@@ -59,35 +61,95 @@ class SpatialView(ManualClusteringView):
             shape=(2, 2),
             **kwargs)
 
+        self.spike_clusters = spike_clusters
+        self.sample_rate = float(sample_rate)
+        self.spike_samples = np.asarray(spike_samples)
+
+        if time_ranges is None:
+            self.time_ranges = ((0, self.spike_samples[-1]/self.sample_rate), )
+        else:
+            self.time_ranges = time_ranges
+
         # Apply the timerange restriction to the data if necessary
         self._do_plot = True if tracking_data is not None else False
 
         if tracking_data is not None:
-            spike_samples = np.asarray(spike_samples)
-            if timerange is None:
-                sample_range = (spike_samples[0], spike_samples[-1])
+            logger.debug("%u tracking points received", tracking_data.shape[0])
+            self.tracking_data = tracking_data
+            self.tracking_data_smoothed = None
+            self._smooth_tracking_data()
+            self._update_status()
+            self._apply_tracking_validity()
+        else:
+            logger.debug("No tracking data received, SpatialView will not draw.")
+
+    def _smooth_tracking_data(self):
+        d = self.tracking_data
+        d_sm = d
+        tracking_t = d[:, 0] / self.sample_rate
+        tracking_fs = 1 / np.mean(np.diff(tracking_t))
+        sigma_pos = math.ceil(self.sec_smooth_pos * tracking_fs)
+        sigma_hd = math.ceil(self.sec_smooth_hd * tracking_fs)
+        sigma_speed = math.ceil(self.sec_smooth_speed * tracking_fs)
+
+        # position
+        if sigma_pos > 0:
+            for i in range(2):
+                d_sm[:, 1+i] = gaussian_filter1d(de[:, 1+i], sigma_pos)
+
+        # azimuth angle
+        if sigma_hd > 0:
+            hd = d[:, 3]
+            data_filt = [gaussian_filter1d([np.sin, np.cos][i](hd), sigma_hd)
+                         for i in range(2)]
+            d_sm[:, 3] = np.mod(np.arctan2(data_filt[0], data_filt[1]), 2*math.pi)
+
+        self.tracking_data_smoothed = d_sm
+
+        # speed
+        dpos = list()
+        for i in range(2):
+            if sigma_speed == 0:
+                dtmp = gaussian_filter1d(d[:, 1+i], sigma_speed)
             else:
-                sample_range = [val*sample_rate for val in timerange]
+                dtmp = d[:, 1+i]
+            dpos.append(np.diff(dtmp))
+        self.speed = np.hstack((0, np.hypot(dpos[0], dpos[1]) * tracking_fs))
 
-            # Store a boolean vector indicating which spikes are within the
-            # required time range
-            self.timerange = timerange
-            self.valid_spikes = (spike_samples > sample_range[0]) & (spike_samples < sample_range[1])
-            self.spike_clusters = spike_clusters
-            self.sample_rate = float(sample_rate)
-            self.spike_samples = spike_samples
-            self.n_spikes, = self.spike_samples.shape
+    def _apply_tracking_validity(self):
+        """
+        Apply the current 'timerange' and 'speed_threshold' restrictions to the
+        tracking data
+        """
 
-            # Only store tracking data samples from within the time range
-            inds = tracking_data[:, 0]
-            valid_tracking = (inds > sample_range[0]) & (inds < sample_range[1])
-            self.tracking_data = tracking_data[valid_tracking, :]
+        d = self.tracking_data
+        spike_samples = self.spike_samples
 
-            # extra initialization for spatial functionality
-            self._calc_occupancy()
+        valid_t_spikes = np.zeros(shape=spike_samples.shape, dtype="bool")
+        valid_t_tracking = np.zeros(shape=d.shape[0], dtype="bool")
+        for trng in self.time_ranges:
+            srng = [val * self.sample_rate for val in trng]
+            valid_t_spikes |= (spike_samples > srng[0]) & (spike_samples < srng[1])
+            valid_t_tracking |= (d[:, 0] > srng[0]) & (d[:, 0] < srng[1])
+
+        inds_spike_tracking = _binary_search(d[:, 0], spike_samples)
+        inds_spike_tracking[~valid_t_spikes] = 0
+        spike_speed = self.speed[inds_spike_tracking]
+
+        if self.speed_threshold_mode == "above":
+            valid_speed = self.speed >= self.speed_threshold
+            valid_speed_spikes = spike_speed >= self.speed_threshold
+        else:
+            valid_speed = self.speed <= self.speed_threshold
+            valid_speed_spikes = spike_speed <= self.speed_threshold
+
+        self.valid_spikes = valid_t_spikes & valid_speed_spikes
+        self.valid_tracking = valid_t_tracking & valid_speed
+        self._calc_occupancy()
 
     def on_select(self, cluster_ids=None):
         super(SpatialView, self).on_select(cluster_ids)
+        cluster_ids = self.cluster_ids
         n_clusters = len(cluster_ids)
         if n_clusters > 0 and self._do_plot:
             with self.building():
@@ -108,12 +170,11 @@ class SpatialView(ManualClusteringView):
         assert len(color) == 4
 
         # Get indices of all spikes for the current cluster
-        v = self.valid_spikes
-        spike_inds_clu = np.in1d(self.spike_clusters, cluster_id)
-        spike_samples = self.spike_samples[spike_inds_clu[v]]
+        spikes_in_clu = np.isin(self.spike_clusters, cluster_id)
+        spike_samples = self.spike_samples[spikes_in_clu & self.valid_spikes]
 
         inds_spike_tracking = _binary_search(self.tracking_data[:, 0], spike_samples)
-        valid_spikes = inds_spike_tracking > 0
+        valid_spikes = inds_spike_tracking >= 0
         inds_spike_tracking = inds_spike_tracking[valid_spikes]
         hd_tuning_curve, spike_hd = self._hd_tuning_curve(inds_spike_tracking)
 
@@ -211,13 +272,95 @@ class SpatialView(ManualClusteringView):
     def attach(self, gui):
         """Attach the view to the GUI."""
         super(SpatialView, self).attach(gui)
+        self.actions.add(self.set_speed_threshold)
+        self.actions.add(self.toggle_speed_threshold_mode)
+        self.actions.add(self.set_time_range)
 
     @property
     def state(self):
-        return Bunch(n_rate_map_bins=self.n_rate_map_bins,
-                     n_hd_bins=self.n_hd_bins,
-                     )
-        
+        return Bunch(speed_threshold=self.speed_threshold,
+                     speed_threshold_mode=self.speed_threshold_mode,
+                     time_range=self.time_ranges, )
+
+    def set_speed_threshold(self, speed_threshold):
+        """
+        Set the threshold value for locomotion speed (in m/s).
+
+        Example: '0.05'
+        """
+        self.speed_threshold = float(speed_threshold)
+        self._apply_tracking_validity()
+        self._update_status()
+        self.on_select()
+
+    def toggle_speed_threshold_mode(self):
+        """
+        Toggle between selecting spikes above and below the speed threshold.
+        """
+        self.speed_threshold_mode = {
+            "above": "below",
+            "below": "above"}[self.speed_threshold_mode]
+        self._apply_tracking_validity()
+        self._update_status()
+        self.on_select()
+
+    def set_time_range(self, time_range, *args):
+        """
+        Define the recording time range for which plots will be generated. Time
+        must be in seconds relative to the start of ephys data acquisition, and
+        must be specified as a list or tuple. By default, all available tracking
+        data will be plotted. Reset the default state by typing 'all' as the
+        time-range value.
+
+        A time range must be specified as two digits with an underscore '_'
+        between them.
+
+        Example: '0_3600' selects tracking data from the first hour.
+
+        Multiple time ranges may be specified as a comma-separated list.
+
+        Example '0_100, 500_600, 1000_2000' specifies three time ranges.
+
+        Example
+        """
+        # TODO: force the action callback to return string type
+
+        #Check if first arg is a list of strings
+        if type(time_range) is not str:
+            time_range = time_range[0]
+
+        strs = list()
+        strs.append(time_range)
+        for s in args:
+            if type(s) == str:
+                strs.append(s)
+            else:
+                strs.append(s[0])
+
+        if time_range == "all":
+            time_ranges = ((0, float(self.spike_samples[-1]/self.sample_rate)), )
+        else:
+            time_ranges = [[float(s.split("_")[n].strip(",")) for n in range(2)] for s in strs]
+        self.time_ranges = time_ranges
+        self._apply_tracking_validity()
+        self._update_status()
+        self.on_select()
+
+    def _update_status(self):
+        s = ""
+        for i, t in enumerate(self.time_ranges):
+            s += "{}–{}".format(t[0], t[1])
+            if i < len(self.time_ranges)-1:
+                s += ", "
+        str_timerange = s
+
+        self.set_status(
+            "Time range: {}, Speed threshold = {:.3f} m/s, threshold mode = {''}"
+            .format(
+                str_timerange,
+                self.speed_threshold,
+                self.speed_threshold_mode))
+
     def _hd_tuning_curve(self, spike_tracking_inds):
 
         # Get the HD for every spike
@@ -236,7 +379,7 @@ class SpatialView(ManualClusteringView):
         # Gaussian smooth the tuning curve
         tcurve = sim.filters.gaussian_filter(
                 tcurve,
-                sigma=self.n_smooth_hd,
+                sigma=self.n_hd_bins_smooth,
                 mode='wrap'
             )
         tcurve /= np.max(tcurve)
@@ -244,17 +387,10 @@ class SpatialView(ManualClusteringView):
      
     def _calc_occupancy(self):
         pos = self.tracking_data
-        t = pos[:, 0]
-        x = pos[:, 1]
-        y = pos[:, 2]
-        hd = pos[:, 3]
-        
-        # Calculate speed
-        dx = np.diff(x)
-        dy = np.diff(y)
-        dt = np.diff(t)
-        speed = np.hstack((0, np.hypot(dy, dx) / dt))
-        valid_speed = speed > self.speed_threshold
+        v = self.valid_tracking
+        x = pos[v, 1]
+        y = pos[v, 2]
+        hd = pos[v, 3]
         
         # Make the bin vectors for x and y
         self.bins = dict()
@@ -270,8 +406,7 @@ class SpatialView(ManualClusteringView):
         self.bins['hd'] = np.linspace(0, 2*math.pi, self.n_hd_bins)
            
         # Calculate the spatial occupancy histogram
-        idx = valid_speed
-        tmp = np.histogram2d(x[idx], y[idx], bins=(self.bins['x'],self.bins['y']) )
+        tmp = np.histogram2d(x, y, bins=(self.bins['x'],self.bins['y']))
         self.occupancy_hist = tmp[0]
         
         # Calculate the HD occupancy histogram
@@ -280,7 +415,7 @@ class SpatialView(ManualClusteringView):
 
 
 # -----------------------------------------------------------------------------
-# Internal functions
+# Internal helper functions
 # -----------------------------------------------------------------------------
 def _cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
@@ -305,8 +440,7 @@ def _vector_to_rgb(a):
 
 
 def _binary_search(a, x, lo=0, hi=None):
-
-    idx = np.empty((len(x), 1), dtype='int32')
+    idx = np.empty((len(x)), dtype='int32')
     for i in range(len(x)):
         hi = hi if hi is not None else len(a)   # hi defaults to len(a)
         tmp = bisect_left(a, x[i], lo, hi)      # find insertion position
