@@ -95,12 +95,12 @@ class SpatialView(ManualClusteringView):
         # position
         if sigma_pos > 0:
             for i in range(2):
-                d_sm[:, 1+i] = gaussian_filter1d(de[:, 1+i], sigma_pos)
+                d_sm[:, 1+i] = gaussian_filter1d(d[:, 1+i], sigma_pos, truncate=2)
 
         # azimuth angle
         if sigma_hd > 0:
             hd = d[:, 3]
-            data_filt = [gaussian_filter1d([np.sin, np.cos][i](hd), sigma_hd)
+            data_filt = [gaussian_filter1d([np.sin, np.cos][i](hd), sigma_hd, truncate=2)
                          for i in range(2)]
             d_sm[:, 3] = np.mod(np.arctan2(data_filt[0], data_filt[1]), 2*math.pi)
 
@@ -110,7 +110,7 @@ class SpatialView(ManualClusteringView):
         dpos = list()
         for i in range(2):
             if sigma_speed == 0:
-                dtmp = gaussian_filter1d(d[:, 1+i], sigma_speed)
+                dtmp = gaussian_filter1d(d[:, 1+i], sigma_speed, truncate=2)
             else:
                 dtmp = d[:, 1+i]
             dpos.append(np.diff(dtmp))
@@ -168,19 +168,19 @@ class SpatialView(ManualClusteringView):
         else:
             return
         assert len(color) == 4
+        
+        pos = self.tracking_data
+        x = pos[self.valid_tracking, 1]
+        y = pos[self.valid_tracking, 2]
 
         # Get indices of all spikes for the current cluster
         spikes_in_clu = np.isin(self.spike_clusters, cluster_id)
         spike_samples = self.spike_samples[spikes_in_clu & self.valid_spikes]
 
-        inds_spike_tracking = _binary_search(self.tracking_data[:, 0], spike_samples)
+        inds_spike_tracking = _binary_search(pos[:, 0], spike_samples)
         valid_spikes = inds_spike_tracking >= 0
         inds_spike_tracking = inds_spike_tracking[valid_spikes]
         hd_tuning_curve, spike_hd = self._hd_tuning_curve(inds_spike_tracking)
-
-        pos = self.tracking_data
-        x = pos[:, 1]
-        y = pos[:, 2]
 
         # Find range of X/Y tracking data
         min_x = np.min(x)
