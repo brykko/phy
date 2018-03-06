@@ -23,7 +23,8 @@ import math
 import scipy.io as sio
 import scipy.ndimage as sim
 from scipy.ndimage.filters import gaussian_filter1d
-from matplotlib.colors import hsv_to_rgb
+from matplotlib.colors import hsv_to_rgb, rgb_to_hsv
+import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +32,12 @@ logger = logging.getLogger(__name__)
 class SpatialView(ManualClusteringView):
 
     # Some class variables
-    n_rate_map_bins = 50
+    n_rate_map_bins = 100
+    n_rate_map_bins_sigma = 4
+    n_rate_map_contours = 10
+    rate_map_contour_mode = "zero"
     n_hd_bins = 180
-    n_hd_bins_smooth = 3
+    n_hd_bins_sigma = 3
     sec_smooth_pos = 0
     sec_smooth_hd = 0.2
     sec_smooth_speed = 0.5
@@ -121,7 +125,6 @@ class SpatialView(ManualClusteringView):
         Apply the current 'timerange' and 'speed_threshold' restrictions to the
         tracking data
         """
-
         d = self.tracking_data
         spike_samples = self.spike_samples
 
@@ -164,10 +167,12 @@ class SpatialView(ManualClusteringView):
         :return:
         """
         if clu_selection_idx is not None:
-            color = tuple(_colormap(clu_selection_idx)) + (.5,)
+            color = tuple(_colormap(clu_selection_idx))
+            color_transp = color + (0.5,)
+            color_solid = color + (1.0,)
         else:
             return
-        assert len(color) == 4
+        assert len(color) == 3
         
         pos = self.tracking_data
         x = pos[self.valid_tracking, 1]
@@ -198,22 +203,20 @@ class SpatialView(ManualClusteringView):
         # Plot path first time only
         if clu_selection_idx == 0:
             # Both normal and hd-coded
-            for i in [0, 1]:
+            for i in [1, 1]:
                 self[i, 0].uplot(
                     x=x.reshape((1,-1)),
                     y=y.reshape((1, -1)),
                     color=(1, 1, 1, 0.2),
-                    data_bounds=data_bounds
-                )
+                    data_bounds=data_bounds)
 
         # Spike locations
         self[0, 0].scatter(
             x=pos[inds_spike_tracking, 1],
             y=pos[inds_spike_tracking, 2],
-            color=color,
+            color=color_transp,
             size=2,
-            data_bounds=data_bounds
-        )
+            data_bounds=data_bounds)
 
         # Spike locations (HD-color-coded)
         spike_colors = _vector_to_rgb(spike_hd)
@@ -222,8 +225,21 @@ class SpatialView(ManualClusteringView):
             y=pos[inds_spike_tracking, 2],
             color=spike_colors,
             size=2,
-            data_bounds=data_bounds
-            )
+            data_bounds=data_bounds)
+
+        # Rate map contour
+        contours = self._2d_rate_map_contours(inds_spike_tracking)
+        v = np.linspace(0, 1, len(contours))
+        for i, contour in enumerate(contours):
+            contour_color = tuple(color) + (v[i],)
+            for line in contour:
+                x = line[:, 1]
+                y = line[:, 0]
+                self[0, 1].plot(
+                    x=x,
+                    y=y,
+                    color=contour_color,
+                    data_bounds=data_bounds)
 
         # HD plot
         rho = 1.1
@@ -236,51 +252,53 @@ class SpatialView(ManualClusteringView):
 
         # Plot axes first time only
         if clu_selection_idx == 0:
-            self[0, 1].uplot(
+            self[1, 1].uplot(
                     x=pol_x,
                     y=pol_y,
                     color=(1, 1, 1, 0.5),
-                    data_bounds = data_bounds
-                )
+                    data_bounds=data_bounds)
 
-            self[0, 1].uplot(
+            self[1, 1].uplot(
                 x=np.array([min_x, max_x]),
                 y=np.array([0, 0]) + (min_y + max_y)/2,
                 color=(1, 1, 1, 0.3),
-                data_bounds = data_bounds
-            )
+                data_bounds=data_bounds)
 
-            self[0, 1].uplot(
+            self[1, 1].uplot(
                 y=np.array([min_y, max_y]),
                 x=np.array([0, 0]) + (min_x + max_x)/2,
                 color=(1, 1, 1, 0.3),
-                data_bounds = data_bounds
-            )
+                data_bounds=data_bounds)
 
         bin_size_hd = self.bins['hd'][1] - self.bins['hd'][0]
         bin_centres_hd = self.bins['hd'][:-1] + bin_size_hd/2
         (x, y) = _pol2cart(hd_tuning_curve, bin_centres_hd)
 
         # HD tuning curve
-        self[0, 1].plot(
+        self[1, 1].plot(
                 x=x,
                 y=y,
-                color=color,
-                data_bounds = data_bounds
-            )
-                
+                color=color_solid,
+                data_bounds=data_bounds)
+
     def attach(self, gui):
         """Attach the view to the GUI."""
         super(SpatialView, self).attach(gui)
         self.actions.add(self.set_speed_threshold)
         self.actions.add(self.toggle_speed_threshold_mode)
         self.actions.add(self.set_time_range)
+        self.actions.separator()
+        self.actions.add(self.set_rate_map_contour_count)
+        self.actions.add(self.toggle_rate_map_contour_minimum)
+        self.actions.add(self.set_rate_map_n_smooth)
 
     @property
     def state(self):
         return Bunch(speed_threshold=self.speed_threshold,
                      speed_threshold_mode=self.speed_threshold_mode,
-                     time_range=self.time_ranges, )
+                     time_range=self.time_ranges,
+                     n_rate_map_contours=self.n_rate_map_contours,
+                     rate_map_contour_mode=self.rate_map_contour_mode)
 
     def set_speed_threshold(self, speed_threshold):
         """
@@ -325,7 +343,7 @@ class SpatialView(ManualClusteringView):
         """
         # TODO: force the action callback to return string type
 
-        #Check if first arg is a list of strings
+        # Check if first arg is a list of strings
         if type(time_range) is not str:
             time_range = time_range[0]
 
@@ -346,23 +364,60 @@ class SpatialView(ManualClusteringView):
         self._update_status()
         self.on_select()
 
+    def set_rate_map_contour_count(self, contour_count):
+        """
+        Define how many contour levels are plotted. The default number is 10.
+        """
+        self.n_rate_map_contours = int(contour_count)
+        self._update_status()
+        self.on_select()
+
+    def set_rate_map_n_smooth(self, n_smooth):
+        """
+        Define the standard deviation of the gaussian smoothing kernel.
+        Units are in bins. The default value is 2.
+        """
+        assert n_smooth >= 0
+        self.n_rate_map_bins_sigma = n_smooth
+        self._update_status()
+        self.on_select()
+
+    def toggle_rate_map_contour_minimum(self):
+        """
+        Toggle the method for determining the minimum rate map contour level.
+        The two modes are 'zero', where contour levels begin at zero, and
+        'minimum', where contours begin at the rate map's minimum value.
+        """
+        self.rate_map_contour_mode = {
+            "zero": "minimum",
+            "minimum": "zero"}[self.rate_map_contour_mode]
+        self._update_status()
+        self.on_select()
+
     def _update_status(self):
         s = ""
         for i, t in enumerate(self.time_ranges):
-            s += "{}-{}".format(t[0], t[1])
+            s += "{:.2f}-{:.2f}".format(t[0], t[1])
             if i < len(self.time_ranges)-1:
                 s += ", "
         str_timerange = s
 
+        if self.speed_threshold_mode == "above":
+            str_ineq = ">="
+        else:
+            str_ineq = "<="
+
         self.set_status(
-            "Time range: {}, Speed threshold = {:.3f} m/s, threshold mode = '{}'"
+            "t={}, speed{}{:.3f} m/s, n contours={}, min contour='{}', smooth={}"
             .format(
                 str_timerange,
+                str_ineq,
                 self.speed_threshold,
-                self.speed_threshold_mode))
+                self.n_rate_map_contours,
+                self.rate_map_contour_mode,
+                self.n_rate_map_bins_sigma))
 
     def _hd_tuning_curve(self, spike_tracking_inds):
-
         # Get the HD for every spike
         hd = self.tracking_data[:, 3]
         spike_hd = hd[spike_tracking_inds]
@@ -379,9 +434,8 @@ class SpatialView(ManualClusteringView):
         # Gaussian smooth the tuning curve
         tcurve = sim.filters.gaussian_filter(
                 tcurve,
-                sigma=self.n_hd_bins_smooth,
-                mode='wrap'
-            )
+                sigma=self.n_hd_bins_sigma,
+                mode='wrap')
         tcurve /= np.max(tcurve)
         return tcurve, spike_hd
      
@@ -390,8 +444,7 @@ class SpatialView(ManualClusteringView):
         v = self.valid_tracking
         x = pos[v, 1]
         y = pos[v, 2]
-        hd = pos[v, 3]
-        
+
         # Make the bin vectors for x and y
         self.bins = dict()
         vars = {'x': x, 'y': y}
@@ -402,21 +455,54 @@ class SpatialView(ManualClusteringView):
             range = max - min
             self.bins[key] = np.linspace(mid-range*0.6, mid+range*0.6, self.n_rate_map_bins)
            
-        # Make hd bin edge
+        self.pos_occupancy_hist = np.histogram2d(
+            x, y, bins=(self.bins['x'], self.bins['y']))[0]
+
+        # Make HD occupancy histogram
         self.bins['hd'] = np.linspace(0, 2*math.pi, self.n_hd_bins)
-           
-        # Calculate the spatial occupancy histogram
-        tmp = np.histogram2d(x, y, bins=(self.bins['x'],self.bins['y']))
-        self.occupancy_hist = tmp[0]
-        
-        # Calculate the HD occupancy histogram
-        tmp = np.histogram(hd, bins=(self.bins['hd']))
-        self.hd_occupancy_hist = tmp[0]
+        self.hd_occupancy_hist = np.histogram(
+            pos[v, 3], bins=(self.bins['hd']))[0]
+
+    def _2d_rate_map_contours(self, spike_tracking_inds):
+        # Generate contour vertices for 2d position rate map
+        pos = self.tracking_data
+        bx = self.bins['x']
+        by = self.bins['y']
+
+        spike_counts = np.histogram2d(
+            pos[spike_tracking_inds, 1],
+            pos[spike_tracking_inds, 2],
+            bins=(bx, by))[0]
+
+        occ = self.pos_occupancy_hist
+        rate_map = spike_counts / occ
+        rate_map[occ == 0] = np.nanmean(rate_map)
+        rate_map = sim.filters.gaussian_filter(
+            rate_map,
+            sigma=self.n_rate_map_bins_sigma)
+
+        rate_map /= rate_map.mean()
+        bxc = _edges_to_centers(bx)
+        byc = _edges_to_centers(by)
+
+        if self.rate_map_contour_mode == "zero":
+            min_val = 0
+        else:
+            min_val = np.min(rate_map)
+
+        v = np.linspace(min_val, np.max(rate_map), self.n_rate_map_contours+2)
+        v = v[1:-1]
+        contour = plt.contour(bxc, byc, rate_map, v)
+        coords = list()
+        for c in contour.collections:
+            coords.append([p.vertices for p in c.get_paths()])
+        return coords
 
 
 # -----------------------------------------------------------------------------
 # Internal helper functions
 # -----------------------------------------------------------------------------
+
 def _cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
     phi = np.arctan2(y, x)
@@ -448,3 +534,8 @@ def _binary_search(a, x, lo=0, hi=None):
         idx[i] = idx_tmp
     return idx
 
+
+def _edges_to_centers(x):
+    assert(x.size >= 2)
+    dx = x[1]-x[0]
+    return x[0:-1] + dx/2
