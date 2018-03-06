@@ -147,8 +147,15 @@ class SpatialView(ManualClusteringView):
             valid_speed_spikes = spike_speed <= self.speed_threshold
 
         self.valid_spikes = valid_t_spikes & valid_speed_spikes
+        self.valid_tracking_time = valid_t_tracking
         self.valid_tracking = valid_t_tracking & valid_speed
-        self._calc_occupancy()
+
+        if any(self.valid_tracking):
+            self._calc_occupancy()
+            self._do_plot = True
+        else:
+            logger.warning('No valid tracking points exist. SpatialView plots will not be drawn')
+            self._do_plot = False
 
     def on_select(self, cluster_ids=None):
         super(SpatialView, self).on_select(cluster_ids)
@@ -203,10 +210,10 @@ class SpatialView(ManualClusteringView):
         # Plot path first time only
         if clu_selection_idx == 0:
             # Both normal and hd-coded
-            for i in [1, 1]:
-                self[i, 0].uplot(
-                    x=x.reshape((1,-1)),
-                    y=y.reshape((1, -1)),
+            for i in [0, 1]:
+                self[0, i].uplot(
+                    x=pos[self.valid_tracking_time, 1].reshape((1,-1)),
+                    y=pos[self.valid_tracking_time, 2].reshape((1, -1)),
                     color=(1, 1, 1, 0.2),
                     data_bounds=data_bounds)
 
@@ -220,7 +227,7 @@ class SpatialView(ManualClusteringView):
 
         # Spike locations (HD-color-coded)
         spike_colors = _vector_to_rgb(spike_hd)
-        self[1, 0].scatter(
+        self[0, 1].scatter(
             x=pos[inds_spike_tracking, 1],
             y=pos[inds_spike_tracking, 2],
             color=spike_colors,
@@ -235,7 +242,7 @@ class SpatialView(ManualClusteringView):
             for line in contour:
                 x = line[:, 1]
                 y = line[:, 0]
-                self[0, 1].plot(
+                self[1, 0].plot(
                     x=x,
                     y=y,
                     color=contour_color,
@@ -338,8 +345,6 @@ class SpatialView(ManualClusteringView):
         Multiple time ranges may be specified as a comma-separated list.
 
         Example '0_100, 500_600, 1000_2000' specifies three time ranges.
-
-        Example
         """
         # TODO: force the action callback to return string type
 
