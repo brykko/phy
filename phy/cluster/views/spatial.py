@@ -31,7 +31,6 @@ logger = logging.getLogger(__name__)
 
 class SpatialView(ManualClusteringView):
 
-    # Some class variables
     n_rate_map_bins = 100
     n_rate_map_bins_sigma = 4
     n_rate_map_contours = 10
@@ -75,7 +74,7 @@ class SpatialView(ManualClusteringView):
             self.time_ranges = time_ranges
 
         # Apply the timerange restriction to the data if necessary
-        self._do_plot = True if tracking_data is not None else False
+        self._do_plot = tracking_data is not None
 
         if tracking_data is not None:
             logger.debug("%u tracking points received", tracking_data.shape[0])
@@ -240,11 +239,9 @@ class SpatialView(ManualClusteringView):
         for i, contour in enumerate(contours):
             contour_color = tuple(color) + (v[i],)
             for line in contour:
-                x = line[:, 1]
-                y = line[:, 0]
                 self[1, 0].plot(
-                    x=x,
-                    y=y,
+                    x=line[:, 0],
+                    y=line[:, 1],
                     color=contour_color,
                     data_bounds=data_bounds)
 
