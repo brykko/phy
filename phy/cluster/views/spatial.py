@@ -550,6 +550,7 @@ class SpatialView(ManualClusteringView):
 # Internal helper functions
 # -----------------------------------------------------------------------------
 
+
 def _cart2pol(x, y):
     rho = np.sqrt(x**2 + y**2)
     phi = np.arctan2(y, x)
@@ -586,6 +587,3 @@ def _edges_to_centers(x):
     assert(x.size >= 2)
     dx = x[1]-x[0]
     return x[0:-1] + dx/2
-
-
-def _calc_hd_offset(x, y, hd):
