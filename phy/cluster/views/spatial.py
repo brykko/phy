@@ -20,6 +20,7 @@ from phy.plot import NDC
 # RG imports
 from bisect import bisect_left
 import math
+import scipy.stats
 import scipy.io as sio
 import scipy.ndimage as sim
 from scipy.ndimage.filters import gaussian_filter1d
@@ -39,6 +40,7 @@ class SpatialView(ManualClusteringView):
     n_hd_bins_sigma = 3
     sec_smooth_pos = 0
     sec_smooth_hd = 0.2
+    sec_smooth_md = 0.2
     sec_smooth_speed = 0.5
     speed_threshold = 0.025
     speed_threshold_mode = "above"
@@ -80,6 +82,9 @@ class SpatialView(ManualClusteringView):
             logger.debug("%u tracking points received", tracking_data.shape[0])
             self.tracking_data = tracking_data
             self.tracking_data_smoothed = None
+            self.tracking_data_shifted = None
+            self.hd_offset = None
+            self.spike_pos_shift = 0.0
             self._smooth_tracking_data()
             self._update_status()
             self._apply_tracking_validity()
@@ -93,6 +98,7 @@ class SpatialView(ManualClusteringView):
         tracking_fs = 1 / np.mean(np.diff(tracking_t))
         sigma_pos = math.ceil(self.sec_smooth_pos * tracking_fs)
         sigma_hd = math.ceil(self.sec_smooth_hd * tracking_fs)
+        sigma_md = math.ceil(self.sec_smooth_md * tracking_fs)
         sigma_speed = math.ceil(self.sec_smooth_speed * tracking_fs)
 
         # position
@@ -100,12 +106,18 @@ class SpatialView(ManualClusteringView):
             for i in range(2):
                 d_sm[:, 1+i] = gaussian_filter1d(d[:, 1+i], sigma_pos, truncate=2)
 
-        # azimuth angle
+        # azimuth head angle
         if sigma_hd > 0:
             hd = d[:, 3]
             data_filt = [gaussian_filter1d([np.sin, np.cos][i](hd), sigma_hd, truncate=2)
                          for i in range(2)]
             d_sm[:, 3] = np.mod(np.arctan2(data_filt[0], data_filt[1]), 2*math.pi)
+
+        # azimuth moving direction
+        md = np.arctan2(d[:, 1], d[:, 2])
+        if sigma_md > 0:
+            md = gaussian_filter1d(md, sigma_md, truncate=2)
+        d_sm[:, 4] = md
 
         self.tracking_data_smoothed = d_sm
 
@@ -150,7 +162,9 @@ class SpatialView(ManualClusteringView):
         self.valid_tracking = valid_t_tracking & valid_speed
 
         if any(self.valid_tracking):
+            self._calc_shifted_pos()
             self._calc_occupancy()
+            self._detect_hd_offset()
             self._do_plot = True
         else:
             logger.warning('No valid tracking points exist. SpatialView plots will not be drawn')
@@ -180,7 +194,7 @@ class SpatialView(ManualClusteringView):
             return
         assert len(color) == 3
         
-        pos = self.tracking_data
+        pos = self.tracking_data_shifted
         x = pos[self.valid_tracking, 1]
         y = pos[self.valid_tracking, 2]
 
@@ -217,9 +231,11 @@ class SpatialView(ManualClusteringView):
                     data_bounds=data_bounds)
 
         # Spike locations
+        spikes_pos = pos[inds_spike_tracking, :],
+
         self[0, 0].scatter(
-            x=pos[inds_spike_tracking, 1],
-            y=pos[inds_spike_tracking, 2],
+            x=spikes_pos[:, 1],
+            y=spikes_pos[:, 2],
             color=color_transp,
             size=2,
             data_bounds=data_bounds)
@@ -227,8 +243,8 @@ class SpatialView(ManualClusteringView):
         # Spike locations (HD-color-coded)
         spike_colors = _vector_to_rgb(spike_hd)
         self[0, 1].scatter(
-            x=pos[inds_spike_tracking, 1],
-            y=pos[inds_spike_tracking, 2],
+            x=spikes_pos[:, 1],
+            y=spikes_pos[:, 2],
             color=spike_colors,
             size=2,
             data_bounds=data_bounds)
@@ -295,6 +311,7 @@ class SpatialView(ManualClusteringView):
         self.actions.add(self.set_rate_map_contour_count)
         self.actions.add(self.toggle_rate_map_contour_minimum)
         self.actions.add(self.set_rate_map_n_smooth)
+        self.actions.add(self.set_spike_position_shift)
 
     @property
     def state(self):
@@ -302,7 +319,8 @@ class SpatialView(ManualClusteringView):
                      speed_threshold_mode=self.speed_threshold_mode,
                      time_range=self.time_ranges,
                      n_rate_map_contours=self.n_rate_map_contours,
-                     rate_map_contour_mode=self.rate_map_contour_mode)
+                     rate_map_contour_mode=self.rate_map_contour_mode,
+                     spike_pos_shift=self.spike_pos_shift)
 
     def set_speed_threshold(self, speed_threshold):
         """
@@ -396,6 +414,17 @@ class SpatialView(ManualClusteringView):
         self._update_status()
         self.on_select()
 
+    def set_spike_position_shift(self, distance):
+        """
+        Specify how far ahead or behind an animal to shift each spike's position
+        relative to its true location.
+        """
+        self.spike_pos_shift = distance
+        self._calc_shifted_pos()
+        self._calc_occupancy()
+        self._update_status()
+        self.on_select()
+
     def _update_status(self):
         s = ""
         for i, t in enumerate(self.time_ranges):
@@ -410,18 +439,20 @@ class SpatialView(ManualClusteringView):
             str_ineq = "<="
 
         self.set_status(
-            "t={}, speed{}{:.3f} m/s, n contours={}, min contour='{}', smooth={}"
+            "t={}, speed{}{:.3f} m/s, n contours={}, min contour='{}', "
+            "smooth={}, pos shift={}"
             .format(
                 str_timerange,
                 str_ineq,
                 self.speed_threshold,
                 self.n_rate_map_contours,
                 self.rate_map_contour_mode,
-                self.n_rate_map_bins_sigma))
+                self.n_rate_map_bins_sigma,
+                self.spike_pos_shift))
 
     def _hd_tuning_curve(self, spike_tracking_inds):
         # Get the HD for every spike
-        hd = self.tracking_data[:, 3]
+        hd = self.tracking_data_shifted[:, 3] - self.hd_offset
         spike_hd = hd[spike_tracking_inds]
 
         # Make the histogram
@@ -442,7 +473,7 @@ class SpatialView(ManualClusteringView):
         return tcurve, spike_hd
      
     def _calc_occupancy(self):
-        pos = self.tracking_data
+        pos = self.tracking_data_shifted
         v = self.valid_tracking
         x = pos[v, 1]
         y = pos[v, 2]
@@ -467,7 +498,7 @@ class SpatialView(ManualClusteringView):
 
     def _2d_rate_map_contours(self, spike_tracking_inds):
         # Generate contour vertices for 2d position rate map
-        pos = self.tracking_data
+        pos = self.tracking_data_shifted
         bx = self.bins['x']
         by = self.bins['y']
 
@@ -500,6 +531,20 @@ class SpatialView(ManualClusteringView):
             coords.append([p.vertices for p in c.get_paths()])
         return coords
 
+    def _detect_hd_offset(self):
+        pos = self.tracking_data_smoothed
+        hd = pos[:, 3]
+        md = pos[:, 4]
+        offset = scipy.stats.circmean(md-hd)
+        self.hd_offset = offset
+
+    def _calc_shifted_pos(self):
+        pos = self.tracking_data_smoothed
+        hd = pos[:, 3]
+        (shift_x, shift_y) = _pol2cart(hd-self.hd_offset, self.spike_pos_shift)
+        pos[:, 1] += shift_x
+        pos[:, 2] += shift_y
+        self.tracking_data_shifted = pos
 
 # -----------------------------------------------------------------------------
 # Internal helper functions
@@ -541,3 +586,6 @@ def _edges_to_centers(x):
     assert(x.size >= 2)
     dx = x[1]-x[0]
     return x[0:-1] + dx/2
+
+
+def _calc_hd_offset(x, y, hd):
