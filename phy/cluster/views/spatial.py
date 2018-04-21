@@ -44,9 +44,8 @@ class SpatialView(ManualClusteringView):
     sec_smooth_speed = 0.5
     speed_threshold = 0.025
     speed_threshold_mode = "above"
-    spike_pos_shift = 0.0
+    spike_pos_shift = 0
     spike_dot_size = 2
-
 
     default_shortcuts = {
         'go_left': 'alt+left',
@@ -95,7 +94,7 @@ class SpatialView(ManualClusteringView):
 
     def _smooth_tracking_data(self):
         d = self.tracking_data
-        d_sm = d
+        d_sm = np.copy(d)
         tracking_t = d[:, 0] / self.sample_rate
         tracking_fs = 1 / np.mean(np.diff(tracking_t))
         sigma_pos = math.ceil(self.sec_smooth_pos * tracking_fs)
@@ -119,7 +118,10 @@ class SpatialView(ManualClusteringView):
         md = np.arctan2(d[:, 1], d[:, 2])
         if sigma_md > 0:
             md = gaussian_filter1d(md, sigma_md, truncate=2)
-        d_sm[:, 4] = md
+            data_filt = [gaussian_filter1d([np.sin, np.cos][i](hd), sigma_hd, truncate=2)
+			         for i in range(2)]
+            md = np.mod(np.arctan2(data_filt[0], data_filt[1]), 2*math.pi)
+        d_sm = np.column_stack((d_sm, md))
 
         self.tracking_data_smoothed = d_sm
 
@@ -164,9 +166,9 @@ class SpatialView(ManualClusteringView):
         self.valid_tracking = valid_t_tracking & valid_speed
 
         if any(self.valid_tracking):
+            self._detect_hd_offset()
             self._calc_shifted_pos()
             self._calc_occupancy()
-            self._detect_hd_offset()
             self._do_plot = True
         else:
             logger.warning('No valid tracking points exist. SpatialView plots will not be drawn')
@@ -233,7 +235,7 @@ class SpatialView(ManualClusteringView):
                     data_bounds=data_bounds)
 
         # Spike locations
-        spikes_pos = pos[inds_spike_tracking, :],
+        spikes_pos = pos[inds_spike_tracking, :]
 
         self[0, 0].scatter(
             x=spikes_pos[:, 1],
@@ -430,7 +432,7 @@ class SpatialView(ManualClusteringView):
 
     def set_spike_dot_size(self, size):
         """
-        Set the size of the dots used for spike locations
+        Set the size of the dots used for plotting spike positions
         """
         self.spike_dot_size = size
         self.on_select()
@@ -462,7 +464,7 @@ class SpatialView(ManualClusteringView):
 
     def _hd_tuning_curve(self, spike_tracking_inds):
         # Get the HD for every spike
-        hd = self.tracking_data_shifted[:, 3] - self.hd_offset
+        hd = np.mod(self.tracking_data_shifted[:, 3] - self.hd_offset, 2*np.pi)
         spike_hd = hd[spike_tracking_inds]
 
         # Make the histogram
@@ -542,16 +544,16 @@ class SpatialView(ManualClusteringView):
         return coords
 
     def _detect_hd_offset(self):
-        pos = self.tracking_data_smoothed
+        pos = self.tracking_data_smoothed[self.valid_tracking, :]
         hd = pos[:, 3]
         md = pos[:, 4]
         offset = scipy.stats.circmean(md-hd)
         self.hd_offset = offset
 
     def _calc_shifted_pos(self):
-        pos = self.tracking_data_smoothed
+        pos = np.copy(self.tracking_data_smoothed)
         hd = pos[:, 3]
-        (shift_x, shift_y) = _pol2cart(hd-self.hd_offset, self.spike_pos_shift)
+        shift_x, shift_y = _pol2cart(self.spike_pos_shift, hd-self.hd_offset)
         pos[:, 1] += shift_x
         pos[:, 2] += shift_y
         self.tracking_data_shifted = pos
