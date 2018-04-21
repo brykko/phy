@@ -44,6 +44,9 @@ class SpatialView(ManualClusteringView):
     sec_smooth_speed = 0.5
     speed_threshold = 0.025
     speed_threshold_mode = "above"
+    spike_pos_shift = 0.0
+    spike_dot_size = 2
+
 
     default_shortcuts = {
         'go_left': 'alt+left',
@@ -84,7 +87,6 @@ class SpatialView(ManualClusteringView):
             self.tracking_data_smoothed = None
             self.tracking_data_shifted = None
             self.hd_offset = None
-            self.spike_pos_shift = 0.0
             self._smooth_tracking_data()
             self._update_status()
             self._apply_tracking_validity()
@@ -237,7 +239,7 @@ class SpatialView(ManualClusteringView):
             x=spikes_pos[:, 1],
             y=spikes_pos[:, 2],
             color=color_transp,
-            size=2,
+            size=self.spike_dot_size,
             data_bounds=data_bounds)
 
         # Spike locations (HD-color-coded)
@@ -246,7 +248,7 @@ class SpatialView(ManualClusteringView):
             x=spikes_pos[:, 1],
             y=spikes_pos[:, 2],
             color=spike_colors,
-            size=2,
+            size=self.spike_dot_size,
             data_bounds=data_bounds)
 
         # Rate map contour
@@ -312,6 +314,7 @@ class SpatialView(ManualClusteringView):
         self.actions.add(self.toggle_rate_map_contour_minimum)
         self.actions.add(self.set_rate_map_n_smooth)
         self.actions.add(self.set_spike_position_shift)
+        self.actions.add(self.set_spike_dot_size)
 
     @property
     def state(self):
@@ -423,6 +426,13 @@ class SpatialView(ManualClusteringView):
         self._calc_shifted_pos()
         self._calc_occupancy()
         self._update_status()
+        self.on_select()
+
+    def set_spike_dot_size(self, size):
+        """
+        Set the size of the dots used for spike locations
+        """
+        self.spike_dot_size = size
         self.on_select()
 
     def _update_status(self):
